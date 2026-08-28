@@ -49,34 +49,31 @@ def is_success(df):
     return numpy.where(condicao, 1, 0)
 
 df = pandas.read_csv("class_materials/games_data.csv")
-print("TYPE CHECK\n")
+print("\nTYPE CHECK\n")
 print(df.dtypes)
-print("\n")
 
 df["Price_USD"] = df["Price_USD"].apply(convert_currency)
-print("currency conversion\n".upper())
+print("\ncurrency conversion\n".upper())
 print(df["Price_USD"].head(5))
-print("\n")
 
-print("Handling Multiple Categories\n".upper())
+print("\nHandling Multiple Categories\n".upper())
 df["Genres"] = df["Genres"].apply(genre_normalization)
 df["Primary_Genre"] = numpy.array(primary_genre)
 print(df[["Genres", "Primary_Genre"]].head(5))
-print("\n")
 
 df["Release_Date"] = pandas.to_datetime(df["Release_Date"], format='mixed', errors='coerce')
-print("date normalization\n".upper())
+print("\ndate normalization\n".upper())
 print(df["Release_Date"].head(5))
 
 df["Negative_Reviews"] = df["Negative_Reviews"].apply(review_normalization)
 df["Positive_Reviews"] = df["Positive_Reviews"].apply(review_normalization)
-print("review normalization\n".upper())
+print("\nreview normalization\n".upper())
 print(df[["Negative_Reviews", "Positive_Reviews"]].head(5))
 
 df["Approval_Ratio"] = approval_ratio(df)
-print("engajamento relativo\n".upper())
+print("\nengajamento relativo\n".upper())
 print(df["Approval_Ratio"].head(5))
 
 df['Is_Success'] = is_success(df)
-print("variável binária para classificação\n".upper())
+print("\nvariável binária para classificação\n".upper())
 print(df['Is_Success'].head(5))
