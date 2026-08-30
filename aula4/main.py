@@ -61,6 +61,11 @@ df["Genres"] = df["Genres"].apply(genre_normalization)
 df["Primary_Genre"] = numpy.array(primary_genre)
 print(df[["Genres", "Primary_Genre"]].head(5))
 
+"""
+Ambiguity issue with date formats:
+DD/MM/AAAA
+MM/DD/AAAA
+"""
 df["Release_Date"] = pandas.to_datetime(df["Release_Date"], format='mixed', errors='coerce')
 print("\ndate normalization\n".upper())
 print(df["Release_Date"].head(5))
