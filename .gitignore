@@ -1,2 +1,4 @@
+__pycache__/
 class_materials/
 .venv/
+output/
