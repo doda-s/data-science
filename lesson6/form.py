@@ -206,6 +206,77 @@ def canonicalize_game(token):
     return GAME_ALIASES.get(token, token.title())
 
 
+SERIES_PARENTHETICAL_PATTERN = re.compile(r"\([^)]*\)")
+# Trechos narrativos que precedem o titulo de fato numa resposta em forma de
+# frase (ex.: "Mais de filmes, porém como séries gosto de Suits...", "Sim,
+# mas assisto pouco. Stranger Things"). Sem remove-los, a divisao por virgula
+# quebra a frase em fragmentos que nao sao titulos.
+SERIES_NARRATIVE_PATTERNS = [
+    re.compile(r"mais de filmes,?\s*por[ée]m como s[ée]ries gosto de\s*", re.IGNORECASE),
+    re.compile(r"mas assisto pouco\.?\s*", re.IGNORECASE),
+    re.compile(r"\s*é minha s[ée]rie favorita\.?", re.IGNORECASE),
+    re.compile(r"\s+etc\.?$", re.IGNORECASE),
+]
+
+
+def prepare_series_text(text):
+    """
+    Remove parenteticos explicativos (que podem conter virgulas e quebrar a
+    divisao de lista) e frases narrativas conhecidas antes da tokenizacao
+    generica em lista.
+    """
+    if pandas.isna(text):
+        return text
+    text = str(text)
+    text = SERIES_PARENTHETICAL_PATTERN.sub("", text)
+    for pattern in SERIES_NARRATIVE_PATTERNS:
+        text = pattern.sub("", text)
+    return text
+
+
+SERIES_ALIASES = {
+    "breaking bead": "Breaking Bad",
+    "braking bad": "Breaking Bad",
+    "broklyn 99": "Brooklyn 99",
+    "got": "Game of Thrones",
+    "game of thrones": "Game of Thrones",
+    "tvd": "The Vampire Diaries",
+    "diario de um vampiro": "The Vampire Diaries",
+    "mentalista": "O Mentalista",
+    "o mentalista": "O Mentalista",
+    "strangers things": "Stranger Things",
+    "house of the dragon": "House of the Dragon",
+    "a casa do dragão": "House of the Dragon",
+    "senhor dos anéis": "O Senhor dos Anéis",
+    "um maluco no pedaço": "Um Maluco no Pedaço",
+    "avatar o último mestre do ar": "Avatar: O Último Mestre do Ar",
+    "hunter x hunter": "Hunter x Hunter",
+    "jujitsu kaisen": "Jujutsu Kaisen",
+    "vis a vis": "Vis a Vis",
+    "lupan": "Lupin",
+    "himym": "How I Met Your Mother",
+    "greys anatomy": "Grey's Anatomy",
+    "la casa de papel": "La Casa de Papel",
+    "todo mundo odeia o chris": "Todo Mundo Odeia o Chris",
+    "power of rings": "The Rings of Power",
+    "o assasino zen": "O Assassino Zen",
+}
+
+# Respostas que nao nomeiam uma serie especifica (comentario sobre gosto em
+# geral, nao um titulo) -- nao entram no ranking.
+SERIES_EXCLUDE = {
+    "sou eclético",
+    "mais de filmes",
+}
+
+
+def canonicalize_series(token):
+    """Mesma ideia de canonicalize_game, aplicada aos apelidos/erros de digitacao das series."""
+    if token in SERIES_EXCLUDE or PURE_NUMBER_PATTERN.match(token):
+        return None
+    return SERIES_ALIASES.get(token, token.title())
+
+
 def standardize_quiz_answer(value):
     """Unifica respostas mistas (int/str/NaN vindas do Excel) para string."""
     if pandas.isna(value):
@@ -278,13 +349,34 @@ ranking_jogos = (
 print(ranking_jogos.to_string())
 print(f"\n{ranking_jogos.size} jogos/titulos distintos citados, {int(ranking_jogos.sum())} citacoes no total.")
 
-print("\ngosta de series: booleana + lista de favoritas\n".upper())
+print("\ngosta de series: booleana + lista de favoritas (nomes padronizados)\n".upper())
+
+
+def extract_favorite_series(raw_value, gosta):
+    if not gosta:
+        return []
+    prepared_text = prepare_series_text(raw_value)
+    series = []
+    for token in tokenize_items(prepared_text):
+        canonical = canonicalize_series(token)
+        if canonical and canonical not in series:
+            series.append(canonical)
+    return series
+
+
 df["Gosta_Series"] = df["Gosta_Series_Raw"].apply(is_positive_answer)
 df["Series_Favoritas"] = df.apply(
-    lambda row: tokenize_items(row["Gosta_Series_Raw"]) if row["Gosta_Series"] else [],
+    lambda row: extract_favorite_series(row["Gosta_Series_Raw"], row["Gosta_Series"]),
     axis=1,
 )
 print(df[["Gosta_Series", "Series_Favoritas"]].head(10))
+
+print("\nranking das series mais citadas como favoritas\n".upper())
+ranking_series = (
+    df["Series_Favoritas"].explode().dropna().value_counts().rename("Citacoes").rename_axis("Serie")
+)
+print(ranking_series.to_string())
+print(f"\n{ranking_series.size} series distintas citadas, {int(ranking_series.sum())} citacoes no total.")
 
 print("\nexperiencia profissional: booleana + texto limpo\n".upper())
 """
@@ -366,9 +458,12 @@ print(df.dtypes)
 
 OUTPUT_PATH = "./lesson6/output/formulario_alunos_limpo.csv"
 RANKING_JOGOS_PATH = "./lesson6/output/ranking_jogos.csv"
+RANKING_SERIES_PATH = "./lesson6/output/ranking_series.csv"
 import os
 os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
 df.to_csv(OUTPUT_PATH, index=False)
 ranking_jogos.to_csv(RANKING_JOGOS_PATH)
+ranking_series.to_csv(RANKING_SERIES_PATH)
 print(f"\nDataframe padronizado salvo em {OUTPUT_PATH}")
 print(f"Ranking de jogos salvo em {RANKING_JOGOS_PATH}")
+print(f"Ranking de series salvo em {RANKING_SERIES_PATH}")
