@@ -125,6 +125,87 @@ def tokenize_transport_modes(raw_value):
     return modes
 
 
+GAME_TITLE_PROTECTION = {
+    # Titulos que contem "&" ou " e " como parte do proprio nome: sem isso,
+    # o separador generico de lista (tokenize_items) quebra "Mount & blade" em
+    # "mount"/"blade" e "Imagem e Ação" em "imagem"/"ação".
+    re.compile(r"mount\s*&\s*blade", re.IGNORECASE): "Mount_e_Blade_Protegido",
+    re.compile(r"imagem\s+e\s+a[çc][ãa]o", re.IGNORECASE): "Imagem_e_Acao_Protegido",
+}
+
+GAME_ALIASES = {
+    "mount_e_blade_protegido": "Mount & Blade",
+    "imagem_e_acao_protegido": "Imagem e Ação",
+    "fifa": "FIFA / EA FC",
+    "fifa(ea fc)": "FIFA / EA FC",
+    "ea fc 26": "FIFA / EA FC",
+    "gta": "GTA V",
+    "gta5": "GTA V",
+    "gta v": "GTA V",
+    "cs": "Counter Strike",
+    "cs2": "Counter Strike",
+    "counter strike": "Counter Strike",
+    "counter strike (cs)": "Counter Strike",
+    "lol": "League of Legends",
+    "rdr2": "Red Dead Redemption 2",
+    "red dead redemption 2": "Red Dead Redemption 2",
+    "red dead redemption 1": "Red Dead Redemption 1",
+    "the last of us": "The Last of Us",
+    "the last of us 1": "The Last of Us",
+    "the last of us 2": "The Last of Us",
+    "the last of us ii": "The Last of Us",
+    "battlefield": "Battlefield",
+    "battlefield 4": "Battlefield",
+    "battlefield 6": "Battlefield",
+    "the legends of zelda tears of the kingdom": "The Legend of Zelda",
+    "the legende of zelda:ocarina of time": "The Legend of Zelda",
+    "transfomice": "Transformice",
+    "geoguesser": "GeoGuessr",
+    "dbd": "Dead by Daylight",
+    "warthunder": "War Thunder",
+    "farcry 3": "Far Cry 3",
+    "life is strange 1": "Life is Strange",
+    "rpg de mesa ( dungeons and dragons)": "Dungeons & Dragons",
+    "age of empires": "Age of Empires",
+    "r.e.p.o": "R.E.P.O.",
+}
+
+# Respostas que nao nomeiam um jogo especifico (ex.: "vídeo game", "jogos
+# aleatórios", ou dizem explicitamente que nao ha favorito) -- nao entram no
+# ranking por nao serem um titulo identificavel.
+GAME_EXCLUDE = {
+    "vídeo game",
+    "jogos de corrida",
+    "jogo mais no celular",
+    "jogos aleatórios",
+    "nenhum em específico. no computador não jogo",
+}
+
+PURE_NUMBER_PATTERN = re.compile(r"^\d+$")
+
+
+def protect_known_game_titles(text):
+    if pandas.isna(text):
+        return text
+    text = str(text)
+    for pattern, placeholder in GAME_TITLE_PROTECTION.items():
+        text = pattern.sub(placeholder, text)
+    return text
+
+
+def canonicalize_game(token):
+    """
+    Mapeia variantes de escrita do mesmo jogo (sigla, versao, ano, apelido)
+    para um nome canonico, descarta respostas genericas (GAME_EXCLUDE) e
+    tokens puramente numericos (sobra de separadores como "1/2" ou "1 e 2"
+    quebrando no meio de um numero de versao).
+    """
+    if token in GAME_EXCLUDE or PURE_NUMBER_PATTERN.match(token):
+        return None
+    token = token.removesuffix(" entre outros")
+    return GAME_ALIASES.get(token, token.title())
+
+
 def standardize_quiz_answer(value):
     """Unifica respostas mistas (int/str/NaN vindas do Excel) para string."""
     if pandas.isna(value):
@@ -168,13 +249,34 @@ print("\nareas de interesse: tokenizadas em lista\n".upper())
 df["Areas_Interesse"] = df["Areas_Interesse_Raw"].apply(tokenize_items)
 print(df["Areas_Interesse"].head(10))
 
-print("\ngosta de jogos: booleana + lista de favoritos\n".upper())
+print("\ngosta de jogos: booleana + lista de favoritos (nomes padronizados)\n".upper())
+
+
+def extract_favorite_games(raw_value, gosta):
+    if not gosta:
+        return []
+    protected_text = protect_known_game_titles(raw_value)
+    games = []
+    for token in tokenize_items(protected_text):
+        canonical = canonicalize_game(token)
+        if canonical and canonical not in games:
+            games.append(canonical)
+    return games
+
+
 df["Gosta_Jogos"] = df["Gosta_Jogos_Raw"].apply(is_positive_answer)
 df["Jogos_Favoritos"] = df.apply(
-    lambda row: tokenize_items(row["Gosta_Jogos_Raw"]) if row["Gosta_Jogos"] else [],
+    lambda row: extract_favorite_games(row["Gosta_Jogos_Raw"], row["Gosta_Jogos"]),
     axis=1,
 )
 print(df[["Gosta_Jogos", "Jogos_Favoritos"]].head(10))
+
+print("\nranking dos jogos mais citados como favoritos\n".upper())
+ranking_jogos = (
+    df["Jogos_Favoritos"].explode().dropna().value_counts().rename("Citacoes").rename_axis("Jogo")
+)
+print(ranking_jogos.to_string())
+print(f"\n{ranking_jogos.size} jogos/titulos distintos citados, {int(ranking_jogos.sum())} citacoes no total.")
 
 print("\ngosta de series: booleana + lista de favoritas\n".upper())
 df["Gosta_Series"] = df["Gosta_Series_Raw"].apply(is_positive_answer)
@@ -263,7 +365,10 @@ print("\nestrutura final\n".upper())
 print(df.dtypes)
 
 OUTPUT_PATH = "./lesson6/output/formulario_alunos_limpo.csv"
+RANKING_JOGOS_PATH = "./lesson6/output/ranking_jogos.csv"
 import os
 os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
 df.to_csv(OUTPUT_PATH, index=False)
+ranking_jogos.to_csv(RANKING_JOGOS_PATH)
 print(f"\nDataframe padronizado salvo em {OUTPUT_PATH}")
+print(f"Ranking de jogos salvo em {RANKING_JOGOS_PATH}")
